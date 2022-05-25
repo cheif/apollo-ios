@@ -27,12 +27,31 @@ class ApolloCodegenTests: XCTestCase {
     type Book {
       title: String!
       author: Author!
+      price: BookPrice
     }
 
     type Author {
       name: String!
       books: [Book!]!
     }
+
+    type Money {
+      amount: Int!
+    }
+
+    interface BookPrice {
+      price: Money!
+    }
+
+    type NormalPrice implements BookPrice {
+      price: Money!
+    }
+
+    type DiscountedPrice implements BookPrice {
+      price: Money!
+      discount: Money!
+    }
+
     """
   }().data(using: .utf8)!
 
@@ -485,4 +504,76 @@ class ApolloCodegenTests: XCTestCase {
     expect(fileManager.allClosuresCalled).to(beTrue())
   }
 
+  func test_fileGenerators_givenOperations_withInterfaceContainingFragments_shouldGenerateTestMocks() throws {
+    // given
+    let schemaPath = createFile(containing: schemaData, named: "schema.graphqls")
+
+    let booksData: Data =
+      """
+      query getBooks {
+        books {
+          title
+          price {
+            ...BookPriceFragment
+          }
+        }
+      }
+
+      fragment BookPriceFragment on BookPrice {
+        ... on NormalPrice {
+          price {
+            ...MoneyFragment
+          }
+        }
+        ... on DiscountedPrice {
+          price {
+            ...MoneyFragment
+          }
+          discount {
+            ...MoneyFragment
+          }
+        }
+      }
+
+      fragment MoneyFragment on Money {
+        amount
+      }
+      """.data(using: .utf8)!
+    createFile(containing: booksData, named: "books-operation.graphql")
+
+    let authorsData: Data =
+      """
+      query getAuthors {
+        authors {
+          name
+        }
+      }
+      """.data(using: .utf8)!
+    createFile(containing: authorsData, named: "authors-operation.graphql")
+
+    let config = ReferenceWrapped(value: ApolloCodegenConfiguration.mock(input: .init(
+      schemaPath: schemaPath,
+      searchPaths: [directoryURL.appendingPathComponent("*.graphql").path]
+    )))
+
+    let fileManager = MockFileManager(strict: false)
+
+    // when
+    let compilationResult = try ApolloCodegen.compileGraphQLResult(config)
+
+    let ir = IR(
+      schemaName: config.schemaName,
+      compilationResult: compilationResult
+    )
+
+    try ApolloCodegen.generateFiles(
+      compilationResult: compilationResult,
+      ir: ir,
+      config: config,
+      fileManager: fileManager
+    )
+
+    // then
+    #warning("TODO: Implement actual assertions when crash is fixed")
+  }
 }
